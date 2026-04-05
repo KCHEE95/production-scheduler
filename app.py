@@ -7,32 +7,17 @@ import os
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
 # ====================== 初始化 ======================
-if 'depts' not in st.session_state:
-    unique_depts = [
-        '2-LCMARK', '2-NP-A', '2-PK-A', 'ASSY-A', 'C-SAW', 'D-CSK', 'D-DRL', 'D-TAP-A',
-        'E-CR', 'F-CAN1', 'F-CEP1', 'F-CZN6', 'F-INK', 'F-NAL2', 'F-NPV1', 'F-PT',
-        'M-BD', 'M-LC-CO2', 'M-LC-FBR', 'M-PC', 'N-LT', 'N-MC', 'P-BF', 'P-DB',
-        'P-DGR', 'P-DMK-A', 'P-FL', 'P-GRD', 'P-MK-A', 'P-PCKLNG', 'P-SB', 'P-TU-A',
-        'Q-LKT', 'W-CDS-A', 'W-LWD', 'W-MIG', 'W-R-MIG', 'W-SWD-A', 'W-TIG'
-    ]
-    st.session_state.depts = pd.DataFrame({
-        'dept_code': unique_depts,
-        'name': unique_depts,
-        'daily_capacity_hours': [10.5] * len(unique_depts)
-    })
-
 if 'items' not in st.session_state:
     st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'customer_po', 
                                                    'order_date', 'exwork_date', 'qty', 'workflow'])
 
 if 'progress' not in st.session_state:
     st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time', 
-                                                      'start_time', 'actual_completion', 'delay_days'])
+                                                      'actual_completion', 'delay_days'])
 
 def save_data():
     st.session_state.items.to_csv('items.csv', index=False)
     st.session_state.progress.to_csv('progress.csv', index=False)
-    st.session_state.depts.to_csv('depts.csv', index=False)
 
 def parse_workflow(row):
     workflow = []
@@ -49,61 +34,37 @@ def calculate_eta(item_id):
         return "待处理"
     last = progress.iloc[-1]
     if last['status'] == 'completed':
-        return last['actual_completion'][:16]
-    
-    delay = float(last.get('delay_days', 0) or 0)
-    dept = last['dept']
-    
-    pending = st.session_state.progress[
-        (st.session_state.progress['dept'] == dept) & 
-        (st.session_state.progress['status'] != 'completed')
-    ]
-    
-    total_hours = 0.0
-    for _, p in pending.iterrows():
-        item_row = st.session_state.items[st.session_state.items['item_id'] == p['item_id']]
-        if not item_row.empty:
-            wf = json.loads(item_row.iloc[0]['workflow'])
-            for step in wf:
-                if step['dept'] == dept:
-                    total_hours += step['est_hours']
-                    break
-    
-    capacity = 10.5
-    dept_row = st.session_state.depts[st.session_state.depts['dept_code'] == dept]
-    if not dept_row.empty:
-        capacity = float(dept_row.iloc[0]['daily_capacity_hours'])
-    
-    days_needed = (total_hours / capacity) + delay
-    eta_date = datetime.now() + timedelta(days=days_needed)
-    return eta_date.strftime("%Y-%m-%d")
+        return last.get('actual_completion', '')[:16] if pd.notna(last.get('actual_completion')) else "已完成"
+    return "计算中..."
 
-# ====================== 主页面 ======================
-st.title("🏭 K.K. Metal AI 自动排产系统")
+# ====================== 主界面 ======================
+st.title("🏭 K.K. Metal AI 自动排产系统（测试版）")
 
-uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件 (BAQ Report-JobStatByCust3 ASM.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("📤 上传您的 Epicor Excel 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在解析 Excel 文件，请稍等..."):
+    with st.spinner("正在读取 Excel（header 从第6行开始）..."):
         try:
+            # 关键：使用 header=5，并跳过前几行空行
             df = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=5)
+            
+            # 清理空行
+            df = df.dropna(how='all').reset_index(drop=True)
+            
             new_items = []
             new_progress = []
             
             for _, row in df.iterrows():
                 main_part = str(row.get('Main Part Num', '')).strip()
                 subpart = str(row.get('Subpart Part Num', '')).strip()
+                
                 if not main_part or not subpart or main_part.lower() == 'nan' or subpart.lower() == 'nan':
                     continue
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # 关键修复：安全判断是否已存在
-                exists = False
-                if not st.session_state.items.empty:
-                    exists = item_id in st.session_state.items['item_id'].values
-                
-                if exists:
+                # 安全检查是否已存在
+                if not st.session_state.items.empty and item_id in st.session_state.items['item_id'].values:
                     continue
                 
                 workflow = parse_workflow(row)
@@ -127,7 +88,6 @@ if uploaded_file:
                     'dept': first_dept,
                     'status': 'pending',
                     'arrival_time': datetime.now().isoformat(),
-                    'start_time': None,
                     'actual_completion': None,
                     'delay_days': 0
                 })
@@ -136,22 +96,24 @@ if uploaded_file:
                 st.session_state.items = pd.concat([st.session_state.items, pd.DataFrame(new_items)], ignore_index=True)
                 st.session_state.progress = pd.concat([st.session_state.progress, pd.DataFrame(new_progress)], ignore_index=True)
                 save_data()
-                st.success(f"✅ 成功导入 {len(new_items)} 个 Subpart！")
+                st.success(f"🎉 成功导入 **{len(new_items)}** 个 Subpart！")
                 st.rerun()
             else:
-                st.warning("未找到有效 Subpart 数据，请检查文件格式。")
+                st.warning("未找到有效数据。请确认 Excel 文件的 header 是否在第 6 行左右。")
                 
         except Exception as e:
             st.error(f"导入失败: {str(e)}")
+            st.info("提示：您的 Excel 第1行是公司名，header 在第6行，这是正常的。我们已尝试处理。")
 
-# ====================== 简单总览 ======================
+# ====================== 显示统计 ======================
 st.subheader("当前数据统计")
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 with col1:
-    st.metric("已导入 Subpart", len(st.session_state.items))
+    st.metric("已导入 Subpart 数量", len(st.session_state.items))
 with col2:
-    st.metric("进行中", len(st.session_state.progress[st.session_state.progress['status'] != 'completed']))
-with col3:
-    st.metric("部门数量", len(st.session_state.depts))
+    st.metric("进行中项目", len(st.session_state.progress))
 
-st.caption("上传 Excel 后即可看到导入结果。目前为简化测试版，后续会加入完整部门视图和仪表板。")
+if not st.session_state.items.empty:
+    st.dataframe(st.session_state.items[['main_part', 'subpart', 'customer_po']].head(10), use_container_width=True)
+
+st.caption("测试版：目前只完成导入功能。导入成功后我再帮您加上部门视图和仪表板。")
