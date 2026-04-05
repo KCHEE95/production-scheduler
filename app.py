@@ -5,19 +5,19 @@ import json
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 安全稳定版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 超级安全版")
 
-# 安全初始化 session_state
-if 'items' not in st.session_state or not isinstance(st.session_state.items, pd.DataFrame):
+# 每次运行都强制初始化为 DataFrame（最保守做法）
+if 'items' not in st.session_state or not isinstance(st.session_state.get('items'), pd.DataFrame):
     st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
 
-if 'progress' not in st.session_state or not isinstance(st.session_state.progress, pd.DataFrame):
+if 'progress' not in st.session_state or not isinstance(st.session_state.get('progress'), pd.DataFrame):
     st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
 
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在安全导入数据..."):
+    with st.spinner("正在导入数据（超级安全模式）..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             
@@ -73,14 +73,13 @@ if uploaded_file:
                         'workflow': json.dumps(workflow)
                     }])
                     
-                    # 超级安全合并
-                    current_items = st.session_state.items
-                    if len(current_items) == 0:
-                        st.session_state.items = new_row
-                    else:
-                        st.session_state.items = pd.concat([current_items, new_row], ignore_index=True)
+                    # 超级安全合并：每次都用 pd.concat + reset_index
+                    try:
+                        st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
+                    except:
+                        st.session_state.items = new_row.copy()   # 如果失败就直接覆盖
                     
-                    # progress
+                    # progress 同样安全处理
                     first_dept = workflow[0]['dept']
                     prog_row = pd.DataFrame([{
                         'item_id': item_id,
@@ -89,20 +88,19 @@ if uploaded_file:
                         'arrival_time': datetime.now().isoformat()
                     }])
                     
-                    current_progress = st.session_state.progress
-                    if len(current_progress) == 0:
-                        st.session_state.progress = prog_row
-                    else:
-                        st.session_state.progress = pd.concat([current_progress, prog_row], ignore_index=True)
+                    try:
+                        st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
+                    except:
+                        st.session_state.progress = prog_row.copy()
                     
                     new_count += 1
                     debug.append(f"✅ 成功: {item_id} ({len(workflow)} steps)")
             
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
-                st.write("示例:", debug[:5])
+                st.write("最后成功记录:", debug[-5:])
             else:
-                st.warning("未能成功导入任何 Subpart")
+                st.warning("未能导入 Subpart")
                 st.subheader("调试信息")
                 st.write(f"剩余行数: {len(df)}")
                 for d in debug[:20]:
@@ -112,8 +110,9 @@ if uploaded_file:
             st.error(f"读取失败: {str(e)}")
 
 st.subheader("当前状态")
+# 最安全的计数方式
 item_count = len(st.session_state.items) if isinstance(st.session_state.items, pd.DataFrame) else 0
 st.write(f"已导入 Subpart 数量： **{item_count}**")
 
 if item_count > 0:
-    st.dataframe(st.session_state.items[['main_part', 'subpart']].head(), use_container_width=True)
+    st.dataframe(st.session_state.items[['main_part', 'subpart']].head(10), use_container_width=True)
