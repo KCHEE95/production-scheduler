@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - Subpart 修正版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 只导入 Subpart 最终版")
 
 ITEMS_CSV = "items.csv"
 
@@ -21,7 +21,7 @@ else:
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在只导入 Subpart..."):
+    with st.spinner("正在只导入真正的 Subpart..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             
@@ -56,13 +56,13 @@ if uploaded_file:
                 if main_candidate and main_candidate.lower() != 'nan':
                     current_main = main_candidate
                 
-                # 只在有 Subpart 时才创建记录（这是关键修正）
+                # === 关键修正：只有当 Subpart 有值时才创建记录 ===
                 if sub_candidate and sub_candidate.lower() != 'nan' and current_main:
                     main_part = current_main
                     subpart = sub_candidate
                     item_id = f"{main_part}_{subpart}"
                     
-                    # 抓取 Step（已优化）
+                    # 抓取 Step
                     workflow = []
                     for i in range(1, 21):
                         col_name = f"Step {i}"
@@ -71,7 +71,8 @@ if uploaded_file:
                             if step and step.lower() != "nan" and step != "":
                                 workflow.append({"dept": step, "est_hours": 8.0})
                     
-                    if len(workflow) < 3:  # fallback
+                    # fallback
+                    if len(workflow) < 3:
                         workflow = []
                         for col_idx in range(len(row)-1, 10, -1):
                             cell = str(row.iloc[col_idx]).strip()
@@ -110,7 +111,7 @@ st.metric("已导入 Subpart 数量", item_count)
 
 if item_count > 0:
     st.success(f"✅ 数据已加载！共 {item_count} 个 Subpart")
-    st.dataframe(items[['main_part', 'subpart', 'qty']].head(15), use_container_width=True)
+    st.dataframe(items[['main_part', 'subpart', 'qty']].head(20), use_container_width=True)
     
     st.subheader("Workflow 示例（前 3 个）")
     for i in range(min(3, item_count)):
@@ -124,4 +125,4 @@ else:
 if st.button("🔄 手动刷新显示"):
     st.rerun()
 
-st.caption("已修正：只导入 Subpart，不重复导入 Main Part")
+st.caption("已严格只导入有 Subpart 的记录")
