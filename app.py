@@ -10,16 +10,17 @@ st.title("🏭 K.K. Metal AI 自动排产系统 - 测试版")
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在强力读取 Excel（处理合并单元格和空列）..."):
+    with st.spinner("正在强力解析 Excel（处理合并单元格 + 空列）..."):
         try:
-            # 读取时不使用 header，让我们手动处理
-            df = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None, skiprows=5)
+            # 读取时不指定 header，先读取所有行
+            df = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             
-            # 设置第6行作为列名
-            df.columns = df.iloc[0]
-            df = df[1:].reset_index(drop=True)
+            # 找到 header 行（第6行，索引5）
+            header_row = 5
+            df.columns = df.iloc[header_row]
+            df = df[header_row + 1:].reset_index(drop=True)
             
-            # 清理完全空的行
+            # 清理空行
             df = df.dropna(how='all').reset_index(drop=True)
             
             new_count = 0
@@ -34,21 +35,18 @@ if uploaded_file:
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # === 强力解析 Step（按位置读取，最后20列左右）===
+                # === 关键：按列位置读取 Step（避开合并和空列）===
                 workflow = []
-                # 从后往前找 Step 列（因为 Step 18-20 在右边，且有合并）
-                for col_idx in range(len(row)-1, 0, -1):   # 从右往左扫描
-                    cell_value = str(row.iloc[col_idx]).strip()
-                    if cell_value and cell_value.lower() != 'nan' and cell_value != '':
-                        # 如果是 Step 格式的字符串，就加入 workflow
-                        if len(cell_value) > 2 and not cell_value[0].isdigit():  # 简单过滤
-                            workflow.insert(0, {"dept": cell_value, "est_hours": 8.0})  # 倒序插入，保持正确顺序
+                # Step 列通常在后面，我们从右边开始找非空值作为 Step
+                for col_idx in range(len(row) - 1, 10, -1):   # 从右往左扫描，跳过前面信息列
+                    cell = str(row.iloc[col_idx]).strip()
+                    if cell and cell.lower() != 'nan' and cell != '' and len(cell) > 2:
+                        workflow.insert(0, {"dept": cell, "est_hours": 8.0})
                 
-                # 如果没找到足够 Step，尝试传统方式
-                if len(workflow) < 3:
+                if len(workflow) < 3:  # 如果没找到足够 Step，尝试传统方式
                     workflow = []
                     for i in range(1, 21):
-                        col_name = f"Step {i}" if f"Step {i}" in row else f"Step{i}"
+                        col_name = f"Step {i}"
                         step = str(row.get(col_name, "")).strip()
                         if step and step.lower() != "nan" and step != "":
                             workflow.append({"dept": step, "est_hours": 8.0})
@@ -56,7 +54,7 @@ if uploaded_file:
                 if not workflow:
                     continue
                 
-                # 添加数据
+                # 添加 item
                 new_row = pd.DataFrame([{
                     'item_id': item_id,
                     'main_part': main_part,
@@ -68,12 +66,12 @@ if uploaded_file:
                     'workflow': json.dumps(workflow)
                 }])
                 
-                if 'items' not in st.session_state:
+                if 'items' not in st.session_state or st.session_state.items.empty:
                     st.session_state.items = new_row
                 else:
                     st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
                 
-                # 自动进入第一个部门
+                # 添加 progress
                 first_dept = workflow[0]['dept']
                 prog_row = pd.DataFrame([{
                     'item_id': item_id,
@@ -82,7 +80,7 @@ if uploaded_file:
                     'arrival_time': datetime.now().isoformat()
                 }])
                 
-                if 'progress' not in st.session_state:
+                if 'progress' not in st.session_state or st.session_state.progress.empty:
                     st.session_state.progress = prog_row
                 else:
                     st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
@@ -91,10 +89,10 @@ if uploaded_file:
                 added.append(item_id)
             
             if new_count > 0:
-                st.success(f"🎉 成功导入 **{new_count}** 个 Subpart！")
-                st.write("示例 Item ID:", added[:5])
+                st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
+                st.write("示例:", added[:5])
             else:
-                st.error("仍然未找到有效 Subpart。请把 Excel 文件前 30 行截图发给我，我帮你调整读取逻辑。")
+                st.error("仍然未能解析出 Subpart。请把文件前30行截图或整个文件发给我，我再继续调整。")
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
@@ -106,4 +104,4 @@ st.write(f"已导入 Subpart 数量： **{count}**")
 if count > 0:
     st.dataframe(st.session_state.items[['main_part', 'subpart']].head(10), use_container_width=True)
 
-st.caption("当前版本已优化合并单元格和空列读取")
+st.caption("已优化合并单元格和空列读取 | 如仍为0，请提供更多截图")
