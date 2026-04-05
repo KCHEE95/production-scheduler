@@ -77,8 +77,8 @@ if uploaded_file and len(items) == 0:
                 if sub_candidate and sub_candidate.lower() != 'nan' and current_main:
                     item_id = f"{current_main}_{sub_candidate}"
                     job_num = str(row.iloc[job_col]).strip() if job_col is not None else ''
-                    # 关键修复：强制转为字符串并清理 .0
-                    nesting_num = str(row.iloc[nesting_col]).strip().replace('.0', '') if nesting_col is not None else ''
+                    # 关键：强制转为纯字符串并清理
+                    nesting_num = str(row.iloc[nesting_col]).strip().replace('.0', '').replace(' ', '') if nesting_col is not None else ''
                     
                     workflow = []
                     for i in range(1, 21):
@@ -135,8 +135,7 @@ if filter_mode == "按部门过滤":
     selected_filter = st.selectbox("选择部门", unique_depts)
     is_dept = True
 else:
-    # 提取所有 Nesting Num 并清理成纯字符串
-    all_nesting = sorted(set(str(x).strip().replace('.0', '') for x in items['nesting_num'].dropna() if str(x).strip() != ''))
+    all_nesting = sorted(set(str(x).strip().replace('.0', '').replace(' ', '') for x in items['nesting_num'].dropna() if str(x).strip() != ''))
     selected_filter = st.selectbox("选择 Nesting Num", all_nesting)
     is_dept = False
 
@@ -150,9 +149,8 @@ for _, item in items.iterrows():
         if is_dept:
             match = any(s['dept'] == selected_filter for s in workflow)
         else:
-            # 最宽松匹配：清理 .0 和空格后比较
-            item_nesting = str(item.get('nesting_num', '')).strip().replace('.0', '')
-            filter_nesting = str(selected_filter).strip().replace('.0', '')
+            item_nesting = str(item.get('nesting_num', '')).strip().replace('.0', '').replace(' ', '')
+            filter_nesting = str(selected_filter).strip().replace('.0', '').replace(' ', '')
             match = item_nesting == filter_nesting
         
         if match:
@@ -193,4 +191,4 @@ if tasks:
 else:
     st.info(f"没有找到匹配的任务。")
 
-st.caption("已使用最宽松的 Nesting Num 匹配（忽略 .0 和空格）")
+st.caption("已使用最严格的数字清理匹配（去掉 .0 和空格）")
