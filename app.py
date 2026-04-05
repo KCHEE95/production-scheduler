@@ -3,8 +3,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import json
 import os
-import time
-import threading
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
@@ -24,20 +22,12 @@ if 'depts' not in st.session_state:
     })
 
 if 'items' not in st.session_state:
-    st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'customer_po', 'order_date', 'exwork_date', 'qty', 'workflow'])
+    st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'customer_po', 
+                                                   'order_date', 'exwork_date', 'qty', 'workflow'])
 
 if 'progress' not in st.session_state:
-    st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time', 'start_time', 'actual_completion', 'delay_days'])
-
-def load_data():
-    if os.path.exists('items.csv'):
-        st.session_state.items = pd.read_csv('items.csv')
-    if os.path.exists('progress.csv'):
-        st.session_state.progress = pd.read_csv('progress.csv')
-    if os.path.exists('depts.csv'):
-        st.session_state.depts = pd.read_csv('depts.csv')
-
-load_data()
+    st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time', 
+                                                      'start_time', 'actual_completion', 'delay_days'])
 
 def save_data():
     st.session_state.items.to_csv('items.csv', index=False)
@@ -88,9 +78,10 @@ def calculate_eta(item_id):
     eta_date = datetime.now() + timedelta(days=days_needed)
     return eta_date.strftime("%Y-%m-%d")
 
-# ====================== 导入页面（关键修复） ======================
-st.title("从 Epicor 导入生产数据")
-uploaded_file = st.file_uploader("上传 BAQ Report-JobStatByCust3 ASM.xlsx", type=["xlsx"])
+# ====================== 主页面 ======================
+st.title("🏭 K.K. Metal AI 自动排产系统")
+
+uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件 (BAQ Report-JobStatByCust3 ASM.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     with st.spinner("正在解析 Excel 文件，请稍等..."):
@@ -107,8 +98,12 @@ if uploaded_file:
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # 关键修复：安全检查是否为空
-                if len(st.session_state.items) > 0 and item_id in st.session_state.items['item_id'].values:
+                # 关键修复：安全判断是否已存在
+                exists = False
+                if not st.session_state.items.empty:
+                    exists = item_id in st.session_state.items['item_id'].values
+                
+                if exists:
                     continue
                 
                 workflow = parse_workflow(row)
@@ -144,10 +139,19 @@ if uploaded_file:
                 st.success(f"✅ 成功导入 {len(new_items)} 个 Subpart！")
                 st.rerun()
             else:
-                st.warning("未找到有效数据，请检查Excel格式。")
+                st.warning("未找到有效 Subpart 数据，请检查文件格式。")
                 
         except Exception as e:
             st.error(f"导入失败: {str(e)}")
 
-st.sidebar.title("K.K. Metal AI排产系统")
-st.sidebar.caption("已加强空DataFrame防护 | 每个步骤固定8小时")
+# ====================== 简单总览 ======================
+st.subheader("当前数据统计")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("已导入 Subpart", len(st.session_state.items))
+with col2:
+    st.metric("进行中", len(st.session_state.progress[st.session_state.progress['status'] != 'completed']))
+with col3:
+    st.metric("部门数量", len(st.session_state.depts))
+
+st.caption("上传 Excel 后即可看到导入结果。目前为简化测试版，后续会加入完整部门视图和仪表板。")
