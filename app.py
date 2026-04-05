@@ -2,20 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import json
-import os
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
 # ====================== 初始化 ======================
 if 'items' not in st.session_state:
-    st.session_state.items = pd.DataFrame()
+    st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'customer_po', 
+                                                   'order_date', 'exwork_date', 'qty', 'workflow'])
 
 if 'progress' not in st.session_state:
-    st.session_state.progress = pd.DataFrame()
-
-def save_data():
-    st.session_state.items.to_csv('items.csv', index=False)
-    st.session_state.progress.to_csv('progress.csv', index=False)
+    st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time', 
+                                                      'actual_completion'])
 
 def parse_workflow(row):
     workflow = []
@@ -47,10 +44,10 @@ if uploaded_file:
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # 最保守检查：直接尝试访问，避免属性错误
+                # 保守检查是否存在
                 already_exists = False
                 try:
-                    if not st.session_state.items.empty and 'item_id' in st.session_state.items.columns:
+                    if len(st.session_state.items) > 0:
                         already_exists = item_id in st.session_state.items['item_id'].values
                 except:
                     already_exists = False
@@ -62,7 +59,8 @@ if uploaded_file:
                 if not workflow:
                     continue
                 
-                new_row = pd.DataFrame([{
+                # 添加新数据
+                new_row = {
                     'item_id': item_id,
                     'main_part': main_part,
                     'subpart': subpart,
@@ -71,24 +69,23 @@ if uploaded_file:
                     'exwork_date': str(row.get('Exwork Date', '')),
                     'qty': float(row.get('Subpart Qty', 0) or 0),
                     'workflow': json.dumps(workflow)
-                }])
+                }
                 
-                st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
+                st.session_state.items = pd.concat([st.session_state.items, pd.DataFrame([new_row])], ignore_index=True)
                 
+                # 自动进入第一个步骤
                 first_dept = workflow[0]['dept']
-                prog_row = pd.DataFrame([{
+                prog_row = {
                     'item_id': item_id,
                     'dept': first_dept,
                     'status': 'pending',
                     'arrival_time': datetime.now().isoformat(),
-                    'actual_completion': None,
-                    'delay_days': 0
-                }])
-                st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
+                    'actual_completion': None
+                }
+                st.session_state.progress = pd.concat([st.session_state.progress, pd.DataFrame([prog_row])], ignore_index=True)
                 
                 new_count += 1
             
-            save_data()
             st.success(f"🎉 成功导入 **{new_count}** 个 Subpart！")
             st.rerun()
             
@@ -98,18 +95,19 @@ if uploaded_file:
 # ====================== 显示状态 ======================
 st.subheader("当前导入状态")
 try:
-    item_count = len(st.session_state.items) if not st.session_state.items.empty else 0
+    count = len(st.session_state.items)
 except:
-    item_count = 0
+    count = 0
 
-st.write(f"已导入 Subpart 数量：**{item_count}**")
+st.write(f"已导入 Subpart 数量：**{count}**")
 
-if item_count > 0:
+if count > 0:
     try:
-        st.dataframe(st.session_state.items[['main_part', 'subpart']].head(10), use_container_width=True)
+        display_df = st.session_state.items[['main_part', 'subpart', 'customer_po']].head(10)
+        st.dataframe(display_df, use_container_width=True)
     except:
-        st.write("数据已导入，但显示出现小问题。")
+        st.write("数据已导入，但显示有小问题。")
 else:
     st.info("请上传您的 Epicor Excel 文件进行测试。")
 
-st.caption("超级保守测试版 | 已尽量避免所有属性错误")
+st.caption("极简稳定测试版 | 已移除所有可能导致 attribute error 的代码")
