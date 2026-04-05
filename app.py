@@ -31,17 +31,18 @@ else:
 st.subheader("当前状态")
 st.metric("已导入 Subpart 数量", len(items))
 
-# 清空按钮
-if st.button("🗑️ 清空所有数据"):
-    if os.path.exists(ITEMS_CSV): os.remove(ITEMS_CSV)
-    if os.path.exists(PROGRESS_CSV): os.remove(PROGRESS_CSV)
-    st.success("数据已清空！")
-    st.rerun()
-
-uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
+col1, col2 = st.columns([4, 1])
+with col1:
+    uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
+with col2:
+    if st.button("🗑️ 清空所有数据"):
+        if os.path.exists(ITEMS_CSV): os.remove(ITEMS_CSV)
+        if os.path.exists(PROGRESS_CSV): os.remove(PROGRESS_CSV)
+        st.success("数据已清空！")
+        st.rerun()
 
 if uploaded_file and len(items) == 0:
-    with st.spinner("正在导入数据..."):
+    with st.spinner("正在导入..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             header_idx = 5
@@ -130,6 +131,7 @@ unique_depts = sorted(list(set(all_depts)))
 if unique_depts:
     selected_dept = st.selectbox("选择你的部门", unique_depts)
     
+    # 筛选该部门的任务（包含 JobNum 和 Nesting Num）
     tasks = []
     for _, item in items.iterrows():
         try:
@@ -152,16 +154,33 @@ if unique_depts:
         task_df = pd.DataFrame(tasks)
         st.dataframe(task_df, use_container_width=True)
         
+        # 选择任务
         selected_item = st.selectbox("选择要处理的任务", task_df['item_id'].tolist())
         action = st.radio("操作", ["开始做", "✅ 完成并移交下一部门"])
         
         if st.button("确认操作"):
-            st.success(f"已记录：{selected_item} → {action}")
-            st.info("（状态更新与自动移交功能正在开发中）")
+            # 更新状态
+            new_row = pd.DataFrame([{
+                'item_id': selected_item,
+                'dept': selected_dept,
+                'status': 'in_progress' if action == "开始做" else 'completed',
+                'arrival_time': datetime.now().isoformat()
+            }])
+            
+            if not progress.empty:
+                progress = pd.concat([progress, new_row], ignore_index=True)
+            else:
+                progress = new_row
+            
+            progress.to_csv(PROGRESS_CSV, index=False)
+            
+            st.success(f"✅ 已更新 {selected_item} 为 {action}")
+            if action == "✅ 完成并移交下一部门":
+                st.info("该任务已完成并移交下一部门（下一版本会自动处理）")
             st.rerun()
     else:
         st.info(f"部门 **{selected_dept}** 目前没有待处理任务。")
 else:
-    st.info("请先上传 Excel 文件")
+    st.info("请先在总览页面上传 Excel 文件")
 
-st.caption("当前版本：支持 JobNum / Nesting Num + 部门视图")
+st.caption("已支持 JobNum / Nesting Num + 状态更新")
