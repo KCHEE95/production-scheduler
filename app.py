@@ -5,19 +5,18 @@ import json
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 最终强力版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 终极调试版")
 
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在强力解析你的 Excel 文件（不依赖列名）..."):
+    with st.spinner("正在读取并调试解析 Excel..."):
         try:
-            # 读取文件，跳过前5行，使用第6行作为列名
             df = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=5)
             df = df.dropna(how='all').reset_index(drop=True)
             
             new_count = 0
-            added = []
+            debug = []
             
             for idx, row in df.iterrows():
                 main_part = str(row.get('Main Part Num', '')).strip()
@@ -28,19 +27,29 @@ if uploaded_file:
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # === 最终强力抓取 Step：从右往左扫描所有非空单元格 ===
+                # === 调试输出：看看这一行有哪些非空列 ===
+                non_empty = []
+                for col_idx in range(len(row)):
+                    cell = str(row.iloc[col_idx]).strip()
+                    if cell and cell.lower() != 'nan' and cell != '':
+                        non_empty.append(f"Col{col_idx}: {cell}")
+                
+                debug.append(f"Row {idx} - Main: {main_part}, Sub: {subpart}, Non-empty cells: {len(non_empty)}")
+                
+                # 强力抓取 Step（从右往左）
                 workflow = []
-                for col_idx in range(len(row) - 1, 5, -1):   # 从右往左扫描，跳过前面信息列
+                for col_idx in range(len(row)-1, 5, -1):
                     cell = str(row.iloc[col_idx]).strip()
                     if cell and cell.lower() != 'nan' and cell != '' and len(cell) > 2:
-                        # 避免把数字或日期当成 Step
-                        if not cell[0].isdigit() or len(cell) > 3:
-                            workflow.insert(0, {"dept": cell, "est_hours": 8.0})
+                        workflow.insert(0, {"dept": cell, "est_hours": 8.0})
                 
                 if len(workflow) == 0:
+                    debug.append(f"Row {idx} - No workflow found")
                     continue
                 
-                # 添加 item
+                debug.append(f"Row {idx} - Found {len(workflow)} steps: { [s['dept'] for s in workflow[:5]] }")
+                
+                # 添加数据
                 new_row = pd.DataFrame([{
                     'item_id': item_id,
                     'main_part': main_part,
@@ -57,7 +66,6 @@ if uploaded_file:
                 else:
                     st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
                 
-                # 自动进入第一个步骤
                 first_dept = workflow[0]['dept']
                 prog_row = pd.DataFrame([{
                     'item_id': item_id,
@@ -72,15 +80,15 @@ if uploaded_file:
                     st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
                 
                 new_count += 1
-                added.append(item_id)
             
             if new_count > 0:
-                st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
-                st.write("示例 Item ID:", added[:5])
-                st.write("第一个 Subpart 的 Step 示例:", workflow[:10])
+                st.success(f"🎉 成功导入 {new_count} 个 Subpart！")
             else:
                 st.error("仍然未能解析出 Subpart。")
-                st.info("请把 Excel 文件前 30 行完整截图发给我，我会继续调整。")
+                st.subheader("调试信息（前10行）")
+                for d in debug[:10]:
+                    st.write(d)
+                st.info("请把上面的调试信息截图发给我，我会根据实际抓到的内容继续调整。")
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
@@ -88,8 +96,3 @@ if uploaded_file:
 st.subheader("当前状态")
 count = len(st.session_state.get('items', pd.DataFrame()))
 st.write(f"已导入 Subpart 数量： **{count}**")
-
-if count > 0:
-    st.dataframe(st.session_state.items[['main_part', 'subpart']].head(10), use_container_width=True)
-
-st.caption("最终强力版 | 按位置从右往左扫描 Step")
