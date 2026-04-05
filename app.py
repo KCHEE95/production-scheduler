@@ -77,8 +77,7 @@ if uploaded_file and len(items) == 0:
                 if sub_candidate and sub_candidate.lower() != 'nan' and current_main:
                     item_id = f"{current_main}_{sub_candidate}"
                     job_num = str(row.iloc[job_col]).strip() if job_col is not None else ''
-                    # 关键：强制转为纯字符串并清理
-                    nesting_num = str(row.iloc[nesting_col]).strip().replace('.0', '').replace(' ', '') if nesting_col is not None else ''
+                    nesting_num = str(row.iloc[nesting_col]).strip().replace('.0', '') if nesting_col is not None else ''
                     
                     workflow = []
                     for i in range(1, 21):
@@ -139,7 +138,7 @@ else:
     selected_filter = st.selectbox("选择 Nesting Num", all_nesting)
     is_dept = False
 
-# 筛选任务（最宽松匹配）
+# 筛选任务
 tasks = []
 for _, item in items.iterrows():
     try:
@@ -173,10 +172,11 @@ if tasks:
     action = st.radio("操作", ["开始做", "✅ 完成并移交下一部门"])
     
     if st.button("确认操作"):
+        new_status = 'in_progress' if action == "开始做" else 'completed'
         new_row = pd.DataFrame([{
             'item_id': selected_item,
             'dept': selected_filter if is_dept else "Nesting Filter",
-            'status': 'in_progress' if action == "开始做" else 'completed',
+            'status': new_status,
             'arrival_time': datetime.now().isoformat()
         }])
         
@@ -187,8 +187,10 @@ if tasks:
         progress.to_csv(PROGRESS_CSV, index=False)
         
         st.success(f"✅ 已更新 {selected_item} 为 {action}")
+        if action == "✅ 完成并移交下一部门":
+            st.info("任务已完成并移交下一部门（下一版本会自动处理）")
         st.rerun()
 else:
     st.info(f"没有找到匹配的任务。")
 
-st.caption("已使用最严格的数字清理匹配（去掉 .0 和空格）")
+st.caption("已支持 JobNum / Nesting Num + 状态更新")
