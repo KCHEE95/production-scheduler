@@ -2,12 +2,14 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+from datetime import datetime
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
 st.title("🏭 K.K. Metal AI 自动排产系统")
 
 ITEMS_CSV = "items.csv"
+PROGRESS_CSV = "progress.csv"
 
 # 加载数据
 if os.path.exists(ITEMS_CSV):
@@ -18,24 +20,30 @@ if os.path.exists(ITEMS_CSV):
 else:
     items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow', 'job_num', 'nesting_num'])
 
+if os.path.exists(PROGRESS_CSV):
+    try:
+        progress = pd.read_csv(PROGRESS_CSV)
+    except:
+        progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
+else:
+    progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
+
 st.subheader("当前状态")
 st.metric("已导入 Subpart 数量", len(items))
 
-col1, col2 = st.columns([4, 1])
-with col1:
-    uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
-with col2:
-    if st.button("🗑️ 清空所有数据"):
-        if os.path.exists(ITEMS_CSV):
-            os.remove(ITEMS_CSV)
-        st.success("✅ 数据已清空！请重新上传。")
-        st.rerun()
+# 清空按钮
+if st.button("🗑️ 清空所有数据"):
+    if os.path.exists(ITEMS_CSV): os.remove(ITEMS_CSV)
+    if os.path.exists(PROGRESS_CSV): os.remove(PROGRESS_CSV)
+    st.success("数据已清空！")
+    st.rerun()
 
-if uploaded_file:
-    with st.spinner("正在导入数据，请稍等..."):
+uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
+
+if uploaded_file and len(items) == 0:
+    with st.spinner("正在导入数据..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
-            
             header_idx = 5
             df = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
             df.columns = df_raw.iloc[header_idx]
@@ -98,7 +106,6 @@ if uploaded_file:
                         'job_num': job_num,
                         'nesting_num': nesting_num
                     }])
-                    
                     all_items = pd.concat([all_items, new_row], ignore_index=True)
             
             all_items.to_csv(ITEMS_CSV, index=False)
@@ -108,8 +115,53 @@ if uploaded_file:
         except Exception as e:
             st.error(f"导入失败: {str(e)}")
 
-# 显示数据
-if len(items) > 0:
-    st.dataframe(items[['main_part', 'subpart', 'job_num', 'nesting_num']].head(15), use_container_width=True)
+# ====================== 部门视图 ======================
+st.subheader("📋 部门视图 - 按部门查看待处理任务")
 
-st.caption("上传后如果没有反应，请点击页面右上角的 Reboot 或刷新页面")
+all_depts = []
+for wf in items.get('workflow', []):
+    try:
+        steps = json.loads(wf)
+        all_depts.extend([s['dept'] for s in steps])
+    except:
+        pass
+unique_depts = sorted(list(set(all_depts)))
+
+if unique_depts:
+    selected_dept = st.selectbox("选择你的部门", unique_depts)
+    
+    tasks = []
+    for _, item in items.iterrows():
+        try:
+            workflow = json.loads(item['workflow'])
+            for step in workflow:
+                if step['dept'] == selected_dept:
+                    tasks.append({
+                        'item_id': item['item_id'],
+                        'job_num': item.get('job_num', ''),
+                        'nesting_num': item.get('nesting_num', ''),
+                        'main_part': item['main_part'],
+                        'subpart': item['subpart'],
+                        'status': 'pending'
+                    })
+                    break
+        except:
+            pass
+    
+    if tasks:
+        task_df = pd.DataFrame(tasks)
+        st.dataframe(task_df, use_container_width=True)
+        
+        selected_item = st.selectbox("选择要处理的任务", task_df['item_id'].tolist())
+        action = st.radio("操作", ["开始做", "✅ 完成并移交下一部门"])
+        
+        if st.button("确认操作"):
+            st.success(f"已记录：{selected_item} → {action}")
+            st.info("（状态更新与自动移交功能正在开发中）")
+            st.rerun()
+    else:
+        st.info(f"部门 **{selected_dept}** 目前没有待处理任务。")
+else:
+    st.info("请先上传 Excel 文件")
+
+st.caption("当前版本：支持 JobNum / Nesting Num + 部门视图")
