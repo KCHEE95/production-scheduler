@@ -6,12 +6,12 @@ import os
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 最简可靠版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 极简可靠版")
 
-# CSV 持久化路径
+# CSV 持久化
 ITEMS_CSV = "items.csv"
 
-# 加载已有数据（如果存在）
+# 加载已有数据
 if os.path.exists(ITEMS_CSV):
     try:
         st.session_state.items = pd.read_csv(ITEMS_CSV)
@@ -49,8 +49,8 @@ if uploaded_file:
             st.success(f"列定位成功: Main 在 {main_col} 列, Subpart 在 {sub_col} 列")
             st.info(f"清理后剩余行数: {len(df)}")
             
-            # 每次都从当前 items 开始
-            current_items = st.session_state.items.copy()
+            # 每次都新建一个干净的 DataFrame
+            all_items = st.session_state.items.copy() if len(st.session_state.items) > 0 else pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
             
             for idx, row in df.iterrows():
                 main_candidate = str(row.iloc[main_col]).strip() if pd.notna(row.iloc[main_col]) else ''
@@ -82,18 +82,18 @@ if uploaded_file:
                         'workflow': json.dumps(workflow)
                     }])
                     
-                    current_items = pd.concat([current_items, new_row], ignore_index=True)
+                    all_items = pd.concat([all_items, new_row], ignore_index=True)
                     new_count += 1
                     debug.append(f"✅ 成功: {item_id} ({len(workflow)} steps)")
             
             # 保存结果
-            st.session_state.items = current_items
+            st.session_state.items = all_items
             st.session_state.items.to_csv(ITEMS_CSV, index=False)
             
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
                 st.write("最后成功记录:", debug[-5:])
-                st.rerun()   # 强制刷新
+                st.rerun()
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
