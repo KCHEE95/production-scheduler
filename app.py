@@ -5,9 +5,9 @@ import json
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 最终稳定版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 显示修复最终版")
 
-# 安全初始化
+# 强制初始化
 if 'items' not in st.session_state or not isinstance(st.session_state.get('items'), pd.DataFrame):
     st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
 if 'progress' not in st.session_state or not isinstance(st.session_state.get('progress'), pd.DataFrame):
@@ -72,13 +72,12 @@ if uploaded_file:
                         'workflow': json.dumps(workflow)
                     }])
                     
-                    # 安全合并
+                    # 安全合并 + 立即保存
                     try:
                         st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
                     except:
                         st.session_state.items = new_row.copy()
                     
-                    # progress
                     first_dept = workflow[0]['dept']
                     prog_row = pd.DataFrame([{
                         'item_id': item_id,
@@ -98,13 +97,12 @@ if uploaded_file:
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
                 st.write("最后成功记录:", debug[-5:])
-            else:
-                st.warning("未能导入任何 Subpart")
+                st.rerun()   # ← 关键：导入成功后强制刷新页面，显示当前状态
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
 
-# ==================== 当前状态（强制刷新显示） ====================
+# ==================== 当前状态显示 ====================
 st.subheader("当前状态")
 item_count = len(st.session_state.items) if isinstance(st.session_state.items, pd.DataFrame) else 0
 st.metric("已导入 Subpart 数量", item_count)
@@ -112,11 +110,12 @@ st.metric("已导入 Subpart 数量", item_count)
 if item_count > 0:
     st.dataframe(st.session_state.items[['main_part', 'subpart', 'qty']].head(10), use_container_width=True)
     
-    st.subheader("部分 Workflow 示例")
+    st.subheader("Workflow 示例（前3个）")
     for i in range(min(3, item_count)):
-        if i < len(st.session_state.items):
-            item = st.session_state.items.iloc[i]
-            st.write(f"**{item['item_id']}** → {len(json.loads(item['workflow']))} 个步骤")
+        item = st.session_state.items.iloc[i]
+        steps = json.loads(item['workflow'])
+        st.write(f"**{item['item_id']}** → {len(steps)} 个步骤")
+        st.write([s['dept'] for s in steps[:8]])   # 显示前8个部门
 else:
     st.info("请上传 Excel 文件开始导入")
 
