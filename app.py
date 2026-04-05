@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 import json
+from datetime import datetime
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
 st.title("🏭 K.K. Metal AI 自动排产系统 - 最终可用版")
 
-# 安全初始化 session_state
+# 强制初始化
 if 'items' not in st.session_state or not isinstance(st.session_state.get('items'), pd.DataFrame):
     st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
 if 'progress' not in st.session_state or not isinstance(st.session_state.get('progress'), pd.DataFrame):
@@ -75,7 +75,7 @@ if uploaded_file:
                     # 安全合并
                     try:
                         st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
-                    except Exception:
+                    except:
                         st.session_state.items = new_row.copy()
                     
                     # progress
@@ -89,7 +89,7 @@ if uploaded_file:
                     
                     try:
                         st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
-                    except Exception:
+                    except:
                         st.session_state.progress = prog_row.copy()
                     
                     new_count += 1
@@ -102,23 +102,29 @@ if uploaded_file:
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
 
-# ==================== 当前状态 ====================
+# ==================== 当前状态（增加手动刷新按钮） ====================
 st.subheader("当前状态")
+
 item_count = len(st.session_state.items) if isinstance(st.session_state.items, pd.DataFrame) else 0
-st.metric("已导入 Subpart 数量", item_count)
+
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.metric("已导入 Subpart 数量", item_count)
+with col2:
+    if st.button("🔄 刷新显示"):
+        st.rerun()
 
 if item_count > 0:
     st.success(f"✅ 数据已加载！共 {item_count} 个 Subpart")
     st.dataframe(st.session_state.items[['main_part', 'subpart', 'qty']].head(10), use_container_width=True)
     
-    st.subheader("部分 Workflow 示例")
+    st.subheader("Workflow 示例（前 3 个）")
     for i in range(min(3, item_count)):
-        if i < len(st.session_state.items):
-            item = st.session_state.items.iloc[i]
-            steps = json.loads(item['workflow'])
-            st.write(f"**{item['item_id']}** → {len(steps)} 个步骤")
-            st.write([s['dept'] for s in steps[:10]])
+        item = st.session_state.items.iloc[i]
+        steps = json.loads(item['workflow'])
+        st.write(f"**{item['item_id']}** → {len(steps)} 个步骤")
+        st.write([s['dept'] for s in steps[:10]])
 else:
-    st.info("请上传 Excel 文件开始导入")
+    st.info("请上传 Excel 文件，或点击上方【刷新显示】按钮")
 
 st.caption("系统已成功解析你的 Epicor BAQ Report（支持交错 Main/Subpart 结构）")
