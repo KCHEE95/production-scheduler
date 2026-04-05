@@ -134,12 +134,12 @@ if filter_mode == "按部门过滤":
     selected_filter = st.selectbox("选择部门", unique_depts)
     is_dept = True
 else:
-    # 提取所有 Nesting Num 并去重、清理
+    # 提取所有 Nesting Num 并清理
     all_nesting = sorted(set(str(x).strip() for x in items['nesting_num'].dropna() if str(x).strip() != ''))
     selected_filter = st.selectbox("选择 Nesting Num", all_nesting)
     is_dept = False
 
-# 筛选任务（加强 Nesting Num 匹配）
+# 筛选任务（最宽松匹配）
 tasks = []
 for _, item in items.iterrows():
     try:
@@ -149,10 +149,10 @@ for _, item in items.iterrows():
         if is_dept:
             match = any(s['dept'] == selected_filter for s in workflow)
         else:
-            # 加强匹配：清理空格、转为字符串、忽略类型差异
-            item_nesting = str(item.get('nesting_num', '')).strip()
-            filter_nesting = str(selected_filter).strip()
-            match = item_nesting == filter_nesting or item_nesting == filter_nesting.replace('.0', '')
+            # 最宽松匹配：转为纯数字字符串比较
+            item_nesting = str(item.get('nesting_num', '')).strip().replace('.0', '').replace(' ', '')
+            filter_nesting = str(selected_filter).strip().replace('.0', '').replace(' ', '')
+            match = item_nesting == filter_nesting
         
         if match:
             tasks.append({
@@ -192,4 +192,4 @@ if tasks:
 else:
     st.info(f"没有找到匹配的任务。")
 
-st.caption("已加强 Nesting Num 匹配逻辑（支持空格和 .0 差异）")
+st.caption("已使用最宽松的 Nesting Num 匹配（忽略空格和 .0）")
