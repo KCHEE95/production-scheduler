@@ -5,19 +5,19 @@ import json
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 最终调试版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 最终强力版")
 
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在强力解析 Excel（处理合并单元格 + 空列）..."):
+    with st.spinner("正在强力解析你的 Excel 文件（不依赖列名）..."):
         try:
             # 读取文件，跳过前5行，使用第6行作为列名
             df = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=5)
             df = df.dropna(how='all').reset_index(drop=True)
             
             new_count = 0
-            debug_info = []
+            added = []
             
             for idx, row in df.iterrows():
                 main_part = str(row.get('Main Part Num', '')).strip()
@@ -28,27 +28,19 @@ if uploaded_file:
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # === 强力抓取 Step：从右往左扫描所有非空单元格 ===
+                # === 最终强力抓取 Step：从右往左扫描所有非空单元格 ===
                 workflow = []
-                for col_idx in range(len(row)-1, 5, -1):   # 从右往左，跳过前面信息列
+                for col_idx in range(len(row) - 1, 5, -1):   # 从右往左扫描，跳过前面信息列
                     cell = str(row.iloc[col_idx]).strip()
                     if cell and cell.lower() != 'nan' and cell != '' and len(cell) > 2:
-                        workflow.insert(0, {"dept": cell, "est_hours": 8.0})
-                
-                # 如果抓取失败，fallback 到传统方式
-                if len(workflow) < 3:
-                    workflow = []
-                    for i in range(1, 21):
-                        col_name = f"Step {i}"
-                        step = str(row.get(col_name, "")).strip()
-                        if step and step.lower() != "nan" and step != "":
-                            workflow.append({"dept": step, "est_hours": 8.0})
+                        # 避免把数字或日期当成 Step
+                        if not cell[0].isdigit() or len(cell) > 3:
+                            workflow.insert(0, {"dept": cell, "est_hours": 8.0})
                 
                 if len(workflow) == 0:
-                    debug_info.append(f"Row {idx}: No workflow found")
                     continue
                 
-                # 添加数据
+                # 添加 item
                 new_row = pd.DataFrame([{
                     'item_id': item_id,
                     'main_part': main_part,
@@ -65,6 +57,7 @@ if uploaded_file:
                 else:
                     st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
                 
+                # 自动进入第一个步骤
                 first_dept = workflow[0]['dept']
                 prog_row = pd.DataFrame([{
                     'item_id': item_id,
@@ -79,14 +72,14 @@ if uploaded_file:
                     st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
                 
                 new_count += 1
-                debug_info.append(f"Row {idx}: {item_id} -> {len(workflow)} steps")
+                added.append(item_id)
             
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
-                st.write("示例:", debug_info[:5])
+                st.write("示例 Item ID:", added[:5])
+                st.write("第一个 Subpart 的 Step 示例:", workflow[:10])
             else:
                 st.error("仍然未能解析出 Subpart。")
-                st.write("调试信息:", debug_info[:10])
                 st.info("请把 Excel 文件前 30 行完整截图发给我，我会继续调整。")
                 
         except Exception as e:
@@ -99,4 +92,4 @@ st.write(f"已导入 Subpart 数量： **{count}**")
 if count > 0:
     st.dataframe(st.session_state.items[['main_part', 'subpart']].head(10), use_container_width=True)
 
-st.caption("最终调试版 | 已按你的文件结构优化读取逻辑")
+st.caption("最终强力版 | 按位置从右往左扫描 Step")
