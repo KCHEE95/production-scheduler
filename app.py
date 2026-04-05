@@ -5,12 +5,18 @@ import json
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 交错行修复版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 稳定最终版")
+
+# 初始化 session_state（安全方式）
+if 'items' not in st.session_state:
+    st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
+if 'progress' not in st.session_state:
+    st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
 
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在处理交错的 Main/Subpart 行..."):
+    with st.spinner("正在处理交错行并导入..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             
@@ -60,6 +66,7 @@ if uploaded_file:
                         debug.append(f"Row {idx}: {item_id} 有 Main/Sub 但无 Step")
                         continue
                     
+                    # 添加数据（安全方式）
                     new_row = pd.DataFrame([{
                         'item_id': item_id,
                         'main_part': main_part,
@@ -68,11 +75,13 @@ if uploaded_file:
                         'workflow': json.dumps(workflow)
                     }])
                     
-                    if 'items' not in st.session_state or st.session_state.items.empty:
+                    # 安全合并 items
+                    if st.session_state.items.empty or len(st.session_state.items) == 0:
                         st.session_state.items = new_row
                     else:
                         st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
                     
+                    # 添加 progress
                     first_dept = workflow[0]['dept']
                     prog_row = pd.DataFrame([{
                         'item_id': item_id,
@@ -81,7 +90,7 @@ if uploaded_file:
                         'arrival_time': datetime.now().isoformat()
                     }])
                     
-                    if 'progress' not in st.session_state or st.session_state.progress.empty:
+                    if st.session_state.progress.empty or len(st.session_state.progress) == 0:
                         st.session_state.progress = prog_row
                     else:
                         st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
@@ -89,21 +98,23 @@ if uploaded_file:
                     new_count += 1
                     debug.append(f"✅ 成功: {item_id} ({len(workflow)} steps)")
                 else:
-                    debug.append(f"Row {idx}: 等待配对 (Main='{main_candidate}', Sub='{sub_candidate}')")
+                    debug.append(f"Row {idx}: 等待配对 (Main='{main_candidate[:20]}...', Sub='{sub_candidate[:20]}...')")
             
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
-                st.write("示例:", debug[-5:])  # 显示最后几条成功记录
+                st.write("最后几条记录:", debug[-5:])
             else:
-                st.error("仍然未能解析出 Subpart。")
+                st.error("未能导入 Subpart")
                 st.subheader("调试信息")
                 for d in debug[:30]:
                     st.write(d)
-                st.info("请把调试信息完整复制或截图发给我。")
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
 
 st.subheader("当前状态")
-count = len(st.session_state.get('items', pd.DataFrame()))
-st.write(f"已导入 Subpart 数量： **{count}**")
+item_count = len(st.session_state.items) if hasattr(st.session_state.items, '__len__') else 0
+st.write(f"已导入 Subpart 数量： **{item_count}**")
+
+if item_count > 0:
+    st.dataframe(st.session_state.items[['main_part', 'subpart']].head(10), use_container_width=True)
