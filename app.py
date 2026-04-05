@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - 只导入 Subpart 最终版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 严格Subpart版")
 
 ITEMS_CSV = "items.csv"
 
@@ -21,7 +21,7 @@ else:
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在只导入真正的 Subpart..."):
+    with st.spinner("正在严格只导入 Subpart..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             
@@ -56,8 +56,10 @@ if uploaded_file:
                 if main_candidate and main_candidate.lower() != 'nan':
                     current_main = main_candidate
                 
-                # === 关键修正：只有当 Subpart 有值时才创建记录 ===
-                if sub_candidate and sub_candidate.lower() != 'nan' and current_main:
+                # === 关键修正：只有 Subpart 有值时才创建记录 ===
+                if (sub_candidate and sub_candidate.lower() != 'nan' and 
+                    current_main and current_main.lower() != 'nan'):
+                    
                     main_part = current_main
                     subpart = sub_candidate
                     item_id = f"{main_part}_{subpart}"
@@ -71,7 +73,6 @@ if uploaded_file:
                             if step and step.lower() != "nan" and step != "":
                                 workflow.append({"dept": step, "est_hours": 8.0})
                     
-                    # fallback
                     if len(workflow) < 3:
                         workflow = []
                         for col_idx in range(len(row)-1, 10, -1):
@@ -125,4 +126,4 @@ else:
 if st.button("🔄 手动刷新显示"):
     st.rerun()
 
-st.caption("已严格只导入有 Subpart 的记录")
+st.caption("已严格只导入有 Subpart 的记录（不再重复 Main Part）")
