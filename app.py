@@ -53,13 +53,13 @@ def save_data():
 def parse_workflow(row):
     workflow = []
     for i in range(1, 21):
-        col_name = f"Step {i}" if f"Step {i}" in row.index else f"Step{i}"
+        col_name = f"Step {i}" if f"Step {i}" in row else f"Step{i}"
         step = str(row.get(col_name, "")).strip()
         if step and step.lower() != "nan" and step != "":
             workflow.append({"dept": step, "est_hours": 8.0})
     return workflow
 
-# 自动检测卡住（后台）
+# 自动检测卡住
 def auto_delay_check():
     while True:
         try:
@@ -104,6 +104,7 @@ def calculate_eta(item_id):
                 if step['dept'] == dept:
                     total_hours += step['est_hours']
                     break
+    
     capacity = 10.5
     dept_row = st.session_state.depts[st.session_state.depts['dept_code'] == dept]
     if not dept_row.empty:
@@ -120,10 +121,10 @@ page = st.sidebar.selectbox("请选择页面", [
     "📊 生产经理仪表板", "🔍 Sales ETA 查询", "⚙️ 系统设置"
 ])
 
-# ====================== 导入页面（已修复） ======================
+# ====================== 导入页面（已彻底修复） ======================
 if page == "📤 导入 Epicor Excel":
     st.title("从 Epicor 导入生产数据")
-    uploaded_file = st.file_uploader("上传您的 BAQ Report-JobStatByCust3 ASM.xlsx", type=["xlsx"])
+    uploaded_file = st.file_uploader("上传 BAQ Report-JobStatByCust3 ASM.xlsx", type=["xlsx"])
     
     if uploaded_file:
         with st.spinner("正在解析 Excel 文件，请稍等..."):
@@ -140,9 +141,10 @@ if page == "📤 导入 Epicor Excel":
                     
                     item_id = f"{main_part}_{subpart}"
                     
-                    # 防止重复导入
-                    if not st.session_state.items.empty and item_id in st.session_state.items['item_id'].values:
-                        continue
+                    # 安全检查是否已存在
+                    if not st.session_state.items.empty:
+                        if item_id in st.session_state.items['item_id'].values:
+                            continue
                     
                     workflow = parse_workflow(row)
                     if not workflow:
@@ -155,7 +157,7 @@ if page == "📤 导入 Epicor Excel":
                         'customer_po': str(row.get('PO - POLine', '')),
                         'order_date': str(row.get('Order Date', '')),
                         'exwork_date': str(row.get('Exwork Date', '')),
-                        'qty': float(row.get('Subpart Qty', 0)),
+                        'qty': float(row.get('Subpart Qty', 0) or 0),
                         'workflow': json.dumps(workflow)
                     })
                     
@@ -177,7 +179,8 @@ if page == "📤 导入 Epicor Excel":
                     st.success(f"✅ 成功导入 {len(new_items)} 个 Subpart！")
                     st.rerun()
                 else:
-                    st.warning("未找到有效 Subpart 数据，请检查 Excel 文件格式。")
+                    st.warning("未找到有效 Subpart 数据，请检查 Excel 文件。")
+                    
             except Exception as e:
                 st.error(f"导入失败: {str(e)}")
 
@@ -185,15 +188,14 @@ if page == "📤 导入 Epicor Excel":
 elif page == "🏠 首页总览":
     st.title("生产总览")
     st.metric("进行中 Subpart", len(st.session_state.progress[st.session_state.progress['status'] != 'completed']))
-    st.subheader("瓶颈预警")
     delayed = st.session_state.progress[st.session_state.progress.get('delay_days', 0) > 1]
     if not delayed.empty:
-        st.warning(f"⚠️ 有 {len(delayed)} 个 Subpart 已卡住超过1天")
+        st.warning(f"⚠️ 有 {len(delayed)} 个 Subpart 已卡住")
     else:
-        st.success("目前无明显卡住项目")
+        st.success("目前运行正常")
 
 elif page == "👷 部门视图":
-    st.title("部门待办")
+    st.title("👷 部门待办")
     selected = st.selectbox("选择部门", st.session_state.depts['dept_code'].tolist())
     dept_data = st.session_state.progress[st.session_state.progress['dept'] == selected].copy()
     if not dept_data.empty:
@@ -203,7 +205,7 @@ elif page == "👷 部门视图":
         st.info("该部门暂无待办")
 
 elif page == "📊 生产经理仪表板":
-    st.title("生产经理仪表板")
+    st.title("📊 生产经理仪表板")
     summary = []
     for _, d in st.session_state.depts.iterrows():
         pending_count = len(st.session_state.progress[
@@ -216,7 +218,7 @@ elif page == "📊 生产经理仪表板":
     st.dataframe(summary_df, use_container_width=True)
 
 elif page == "🔍 Sales ETA 查询":
-    st.title("Sales ETA 查询")
+    st.title("🔍 Sales ETA 查询")
     search = st.text_input("输入 Main Part Num 或 PO 号码")
     if search:
         results = st.session_state.items[
@@ -227,4 +229,4 @@ elif page == "🔍 Sales ETA 查询":
             eta = calculate_eta(item['item_id'])
             st.success(f"**{item['main_part']}** | {item['subpart']} | **ETA: {eta}**")
 
-st.sidebar.caption("已修复空DataFrame错误 | 每4小时自动检测卡住")
+st.sidebar.caption("已修复导入错误 | 每个步骤固定8小时 | 每日10.5小时产能")
