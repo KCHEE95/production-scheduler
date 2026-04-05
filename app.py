@@ -13,24 +13,19 @@ PROGRESS_CSV = "progress.csv"
 
 # 加载数据
 if os.path.exists(ITEMS_CSV):
-    try:
-        items = pd.read_csv(ITEMS_CSV)
-    except:
-        items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow', 'job_num', 'nesting_num'])
+    items = pd.read_csv(ITEMS_CSV)
 else:
     items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow', 'job_num', 'nesting_num'])
 
 if os.path.exists(PROGRESS_CSV):
-    try:
-        progress = pd.read_csv(PROGRESS_CSV)
-    except:
-        progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
+    progress = pd.read_csv(PROGRESS_CSV)
 else:
-    progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
+    progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time', 'update_time'])
 
 st.subheader("当前状态")
 st.metric("已导入 Subpart 数量", len(items))
 
+# 上传区域
 col1, col2 = st.columns([4, 1])
 with col1:
     uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
@@ -38,9 +33,10 @@ with col2:
     if st.button("🗑️ 清空所有数据"):
         if os.path.exists(ITEMS_CSV): os.remove(ITEMS_CSV)
         if os.path.exists(PROGRESS_CSV): os.remove(PROGRESS_CSV)
-        st.success("数据已清空！")
+        st.success("✅ 数据已清空！")
         st.rerun()
 
+# 导入逻辑
 if uploaded_file and len(items) == 0:
     with st.spinner("正在导入..."):
         try:
@@ -144,7 +140,6 @@ for _, item in items.iterrows():
     try:
         workflow = json.loads(item['workflow'])
         match = False
-        
         if is_dept:
             match = any(s['dept'] == selected_filter for s in workflow)
         else:
@@ -166,31 +161,44 @@ for _, item in items.iterrows():
 
 if tasks:
     task_df = pd.DataFrame(tasks)
-    st.dataframe(task_df, use_container_width=True)
+    st.dataframe(task_df, use_container_width=True, height=300)
     
-    selected_item = st.selectbox("选择要处理的任务", task_df['item_id'].tolist())
-    action = st.radio("操作", ["开始做", "✅ 完成并移交下一部门"])
+    # === 新增：批量操作（支持多选）===
+    st.subheader("批量操作（推荐用于 Nesting Num 过滤）")
+    selected_items = st.multiselect(
+        "选择要处理的任务（可多选）",
+        options=task_df['item_id'].tolist(),
+        default=task_df['item_id'].tolist() if len(task_df) <= 5 else None
+    )
     
-    if st.button("确认操作"):
-        new_status = 'in_progress' if action == "开始做" else 'completed'
-        new_row = pd.DataFrame([{
-            'item_id': selected_item,
-            'dept': selected_filter if is_dept else "Nesting Filter",
-            'status': new_status,
-            'arrival_time': datetime.now().isoformat()
-        }])
-        
-        if not progress.empty:
-            progress = pd.concat([progress, new_row], ignore_index=True)
+    action = st.radio("操作类型", ["开始做", "✅ 完成并移交下一部门"])
+    
+    if st.button("确认批量操作", type="primary"):
+        if not selected_items:
+            st.warning("请至少选择一个任务")
         else:
-            progress = new_row
-        progress.to_csv(PROGRESS_CSV, index=False)
-        
-        st.success(f"✅ 已更新 {selected_item} 为 {action}")
-        if action == "✅ 完成并移交下一部门":
-            st.info("任务已完成并移交下一部门（下一版本会自动处理）")
-        st.rerun()
+            with st.spinner("正在更新..."):
+                new_status = 'in_progress' if action == "开始做" else 'completed'
+                new_rows = []
+                for item_id in selected_items:
+                    new_rows.append({
+                        'item_id': item_id,
+                        'dept': selected_filter if is_dept else "Nesting Filter",
+                        'status': new_status,
+                        'arrival_time': datetime.now().isoformat(),
+                        'update_time': datetime.now().isoformat()
+                    })
+                
+                new_df = pd.DataFrame(new_rows)
+                if not progress.empty:
+                    progress = pd.concat([progress, new_df], ignore_index=True)
+                else:
+                    progress = new_df
+                progress.to_csv(PROGRESS_CSV, index=False)
+                
+                st.success(f"✅ 已成功更新 {len(selected_items)} 个任务 为 {action}")
+                st.rerun()
 else:
-    st.info(f"没有找到匹配的任务。")
+    st.info("没有找到匹配的任务。")
 
-st.caption("已支持 JobNum / Nesting Num + 状态更新")
+st.caption("已支持 Nesting Num 批量完成 + 按钮反应优化")
