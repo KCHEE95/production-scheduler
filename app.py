@@ -117,7 +117,7 @@ if uploaded_file and len(items) == 0:
             st.error(f"导入失败: {str(e)}")
 
 # ====================== 部门视图 ======================
-st.subheader("📋 部门视图 - 按部门查看待处理任务")
+st.subheader("📋 部门视图 - 按部门或 Nesting Num 查看任务")
 
 all_depts = []
 for wf in items.get('workflow', []):
@@ -128,59 +128,67 @@ for wf in items.get('workflow', []):
         pass
 unique_depts = sorted(list(set(all_depts)))
 
-if unique_depts:
-    selected_dept = st.selectbox("选择你的部门", unique_depts)
-    
-    # 筛选该部门的任务（包含 JobNum 和 Nesting Num）
-    tasks = []
-    for _, item in items.iterrows():
-        try:
-            workflow = json.loads(item['workflow'])
-            for step in workflow:
-                if step['dept'] == selected_dept:
-                    tasks.append({
-                        'item_id': item['item_id'],
-                        'job_num': item.get('job_num', ''),
-                        'nesting_num': item.get('nesting_num', ''),
-                        'main_part': item['main_part'],
-                        'subpart': item['subpart'],
-                        'status': 'pending'
-                    })
-                    break
-        except:
-            pass
-    
-    if tasks:
-        task_df = pd.DataFrame(tasks)
-        st.dataframe(task_df, use_container_width=True)
-        
-        # 选择任务
-        selected_item = st.selectbox("选择要处理的任务", task_df['item_id'].tolist())
-        action = st.radio("操作", ["开始做", "✅ 完成并移交下一部门"])
-        
-        if st.button("确认操作"):
-            # 更新状态
-            new_row = pd.DataFrame([{
-                'item_id': selected_item,
-                'dept': selected_dept,
-                'status': 'in_progress' if action == "开始做" else 'completed',
-                'arrival_time': datetime.now().isoformat()
-            }])
-            
-            if not progress.empty:
-                progress = pd.concat([progress, new_row], ignore_index=True)
-            else:
-                progress = new_row
-            
-            progress.to_csv(PROGRESS_CSV, index=False)
-            
-            st.success(f"✅ 已更新 {selected_item} 为 {action}")
-            if action == "✅ 完成并移交下一部门":
-                st.info("该任务已完成并移交下一部门（下一版本会自动处理）")
-            st.rerun()
-    else:
-        st.info(f"部门 **{selected_dept}** 目前没有待处理任务。")
-else:
-    st.info("请先在总览页面上传 Excel 文件")
+filter_mode = st.radio("过滤方式", ["按部门过滤", "按 Nesting Num 过滤"])
 
-st.caption("已支持 JobNum / Nesting Num + 状态更新")
+if filter_mode == "按部门过滤":
+    selected_filter = st.selectbox("选择部门", unique_depts)
+    is_dept_filter = True
+else:
+    all_nesting = sorted(items['nesting_num'].dropna().astype(str).unique())
+    selected_filter = st.selectbox("选择 Nesting Num", all_nesting)
+    is_dept_filter = False
+
+# 筛选任务
+tasks = []
+for _, item in items.iterrows():
+    try:
+        workflow = json.loads(item['workflow'])
+        match = False
+        
+        if is_dept_filter:
+            match = any(s['dept'] == selected_filter for s in workflow)
+        else:
+            # 加强匹配：去掉空格并转字符串比较
+            item_nesting = str(item.get('nesting_num', '')).strip()
+            filter_nesting = str(selected_filter).strip()
+            match = item_nesting == filter_nesting
+        
+        if match:
+            tasks.append({
+                'item_id': item['item_id'],
+                'job_num': item.get('job_num', ''),
+                'nesting_num': item.get('nesting_num', ''),
+                'main_part': item['main_part'],
+                'subpart': item['subpart'],
+                'status': 'pending'
+            })
+    except:
+        pass
+
+if tasks:
+    task_df = pd.DataFrame(tasks)
+    st.dataframe(task_df, use_container_width=True)
+    
+    selected_item = st.selectbox("选择要处理的任务", task_df['item_id'].tolist())
+    action = st.radio("操作", ["开始做", "✅ 完成并移交下一部门"])
+    
+    if st.button("确认操作"):
+        new_row = pd.DataFrame([{
+            'item_id': selected_item,
+            'dept': selected_filter if is_dept_filter else "Nesting Filter",
+            'status': 'in_progress' if action == "开始做" else 'completed',
+            'arrival_time': datetime.now().isoformat()
+        }])
+        
+        if not progress.empty:
+            progress = pd.concat([progress, new_row], ignore_index=True)
+        else:
+            progress = new_row
+        progress.to_csv(PROGRESS_CSV, index=False)
+        
+        st.success(f"✅ 已更新 {selected_item} 为 {action}")
+        st.rerun()
+else:
+    st.info(f"没有找到匹配的任务。")
+
+st.caption("已支持按部门或 Nesting Num 过滤 + 状态更新")
