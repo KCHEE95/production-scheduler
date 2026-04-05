@@ -132,23 +132,22 @@ filter_mode = st.radio("过滤方式", ["按部门过滤", "按 Nesting Num 过�
 
 if filter_mode == "按部门过滤":
     selected_filter = st.selectbox("选择部门", unique_depts)
-    is_dept_filter = True
+    is_dept = True
 else:
-    all_nesting = sorted(items['nesting_num'].dropna().astype(str).unique())
+    all_nesting = sorted([str(x).strip() for x in items['nesting_num'].dropna().unique() if str(x).strip() != ''])
     selected_filter = st.selectbox("选择 Nesting Num", all_nesting)
-    is_dept_filter = False
+    is_dept = False
 
-# 筛选任务
+# 筛选任务（加强匹配）
 tasks = []
 for _, item in items.iterrows():
     try:
         workflow = json.loads(item['workflow'])
         match = False
         
-        if is_dept_filter:
+        if is_dept:
             match = any(s['dept'] == selected_filter for s in workflow)
         else:
-            # 加强匹配：去掉空格并转字符串比较
             item_nesting = str(item.get('nesting_num', '')).strip()
             filter_nesting = str(selected_filter).strip()
             match = item_nesting == filter_nesting
@@ -156,8 +155,8 @@ for _, item in items.iterrows():
         if match:
             tasks.append({
                 'item_id': item['item_id'],
-                'job_num': item.get('job_num', ''),
-                'nesting_num': item.get('nesting_num', ''),
+                'job_num': str(item.get('job_num', '')),
+                'nesting_num': str(item.get('nesting_num', '')),
                 'main_part': item['main_part'],
                 'subpart': item['subpart'],
                 'status': 'pending'
@@ -175,7 +174,7 @@ if tasks:
     if st.button("确认操作"):
         new_row = pd.DataFrame([{
             'item_id': selected_item,
-            'dept': selected_filter if is_dept_filter else "Nesting Filter",
+            'dept': selected_filter if is_dept else "Nesting Filter",
             'status': 'in_progress' if action == "开始做" else 'completed',
             'arrival_time': datetime.now().isoformat()
         }])
@@ -191,4 +190,4 @@ if tasks:
 else:
     st.info(f"没有找到匹配的任务。")
 
-st.caption("已支持按部门或 Nesting Num 过滤 + 状态更新")
+st.caption("已加强 Nesting Num 匹配逻辑")
