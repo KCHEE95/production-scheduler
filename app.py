@@ -6,27 +6,24 @@ import os
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - CSV持久化最终版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 最简可靠版")
 
-# 文件路径
+# CSV 持久化路径
 ITEMS_CSV = "items.csv"
-PROGRESS_CSV = "progress.csv"
 
-# 加载已有数据
+# 加载已有数据（如果存在）
 if os.path.exists(ITEMS_CSV):
-    st.session_state.items = pd.read_csv(ITEMS_CSV)
+    try:
+        st.session_state.items = pd.read_csv(ITEMS_CSV)
+    except:
+        st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
 else:
     st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'qty', 'workflow'])
-
-if os.path.exists(PROGRESS_CSV):
-    st.session_state.progress = pd.read_csv(PROGRESS_CSV)
-else:
-    st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time'])
 
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在导入数据并保存..."):
+    with st.spinner("正在导入数据..."):
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=None)
             
@@ -51,6 +48,9 @@ if uploaded_file:
             
             st.success(f"列定位成功: Main 在 {main_col} 列, Subpart 在 {sub_col} 列")
             st.info(f"清理后剩余行数: {len(df)}")
+            
+            # 每次都从当前 items 开始
+            current_items = st.session_state.items.copy()
             
             for idx, row in df.iterrows():
                 main_candidate = str(row.iloc[main_col]).strip() if pd.notna(row.iloc[main_col]) else ''
@@ -82,35 +82,23 @@ if uploaded_file:
                         'workflow': json.dumps(workflow)
                     }])
                     
-                    # 合并
-                    st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
-                    
-                    # progress
-                    first_dept = workflow[0]['dept']
-                    prog_row = pd.DataFrame([{
-                        'item_id': item_id,
-                        'dept': first_dept,
-                        'status': 'pending',
-                        'arrival_time': datetime.now().isoformat()
-                    }])
-                    st.session_state.progress = pd.concat([st.session_state.progress, prog_row], ignore_index=True)
-                    
+                    current_items = pd.concat([current_items, new_row], ignore_index=True)
                     new_count += 1
                     debug.append(f"✅ 成功: {item_id} ({len(workflow)} steps)")
             
-            # 保存到 CSV（关键持久化）
+            # 保存结果
+            st.session_state.items = current_items
             st.session_state.items.to_csv(ITEMS_CSV, index=False)
-            st.session_state.progress.to_csv(PROGRESS_CSV, index=False)
             
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
                 st.write("最后成功记录:", debug[-5:])
-                st.rerun()   # 强制刷新显示
+                st.rerun()   # 强制刷新
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
 
-# ==================== 当前状态 ====================
+# ==================== 显示 ====================
 st.subheader("当前状态")
 item_count = len(st.session_state.items) if isinstance(st.session_state.items, pd.DataFrame) else 0
 st.metric("已导入 Subpart 数量", item_count)
@@ -131,4 +119,4 @@ else:
 if st.button("🔄 手动刷新显示"):
     st.rerun()
 
-st.caption("系统已成功解析你的 Epicor BAQ Report（数据已保存到 CSV）")
+st.caption("数据已保存到 CSV 文件")
