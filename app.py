@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_icon="🏭")
 
-st.title("🏭 K.K. Metal AI 自动排产系统 - CSV最终版")
+st.title("🏭 K.K. Metal AI 自动排产系统 - 最终稳定版")
 
 ITEMS_CSV = "items.csv"
 
@@ -47,7 +47,6 @@ if uploaded_file:
             st.success(f"列定位成功: Main 在 {main_col} 列, Subpart 在 {sub_col} 列")
             st.info(f"清理后剩余行数: {len(df)}")
             
-            # 使用本地变量，避免 session_state 问题
             all_items = items.copy()
             
             for idx, row in df.iterrows():
@@ -90,14 +89,13 @@ if uploaded_file:
             if new_count > 0:
                 st.success(f"🎉 **成功导入 {new_count} 个 Subpart！**")
                 st.write("最后成功记录:", debug[-5:])
-                st.rerun()
                 
         except Exception as e:
             st.error(f"读取失败: {str(e)}")
 
-# 显示部分
+# ==================== 显示部分 ====================
 st.subheader("当前状态")
-item_count = len(items) if isinstance(items, pd.DataFrame) else 0
+item_count = len(items) if 'items' in locals() and isinstance(items, pd.DataFrame) else 0
 st.metric("已导入 Subpart 数量", item_count)
 
 if item_count > 0:
@@ -116,4 +114,4 @@ else:
 if st.button("🔄 手动刷新显示"):
     st.rerun()
 
-st.caption("数据已保存到 CSV 文件")
+st.caption("数据已保存到 CSV 文件（极简稳定版）")
