@@ -34,9 +34,9 @@ with col2:
         if os.path.exists(ITEMS_CSV): os.remove(ITEMS_CSV)
         if os.path.exists(PROGRESS_CSV): os.remove(PROGRESS_CSV)
         st.success("✅ 数据已清空！")
-        st.rerun()
+        st.experimental_rerun()
 
-# 导入逻辑
+# 导入逻辑（保持不变）
 if uploaded_file and len(items) == 0:
     with st.spinner("正在导入..."):
         try:
@@ -107,7 +107,7 @@ if uploaded_file and len(items) == 0:
             
             all_items.to_csv(ITEMS_CSV, index=False)
             st.success(f"🎉 成功导入 {len(all_items)} 个 Subpart！")
-            st.rerun()
+            st.experimental_rerun()
             
         except Exception as e:
             st.error(f"导入失败: {str(e)}")
@@ -154,21 +154,20 @@ for _, item in items.iterrows():
                 'nesting_num': str(item.get('nesting_num', '')),
                 'main_part': item['main_part'],
                 'subpart': item['subpart'],
-                'status': 'pending'
+                'current_workflow': json.loads(item['workflow'])  # 用于自动移交
             })
     except:
         pass
 
 if tasks:
     task_df = pd.DataFrame(tasks)
-    st.dataframe(task_df, use_container_width=True, height=300)
+    st.dataframe(task_df[['item_id', 'job_num', 'nesting_num', 'main_part', 'subpart']], use_container_width=True, height=300)
     
-    # === 新增：批量操作（支持多选）===
     st.subheader("批量操作（推荐用于 Nesting Num 过滤）")
     selected_items = st.multiselect(
         "选择要处理的任务（可多选）",
-        options=task_df['item_id'].tolist(),
-        default=task_df['item_id'].tolist() if len(task_df) <= 5 else None
+        options=[t['item_id'] for t in tasks],
+        default=[t['item_id'] for t in tasks] if len(tasks) <= 5 else []
     )
     
     action = st.radio("操作类型", ["开始做", "✅ 完成并移交下一部门"])
@@ -177,10 +176,19 @@ if tasks:
         if not selected_items:
             st.warning("请至少选择一个任务")
         else:
-            with st.spinner("正在更新..."):
-                new_status = 'in_progress' if action == "开始做" else 'completed'
+            with st.spinner(f"正在处理 {len(selected_items)} 个任务..."):
                 new_rows = []
                 for item_id in selected_items:
+                    # 找到对应的 workflow
+                    item_data = next((t for t in tasks if t['item_id'] == item_id), None)
+                    if not item_data:
+                        continue
+                    
+                    workflow = item_data['current_workflow']
+                    current_dept = selected_filter if is_dept else None
+                    
+                    new_status = 'in_progress' if action == "开始做" else 'completed'
+                    
                     new_rows.append({
                         'item_id': item_id,
                         'dept': selected_filter if is_dept else "Nesting Filter",
@@ -188,17 +196,27 @@ if tasks:
                         'arrival_time': datetime.now().isoformat(),
                         'update_time': datetime.now().isoformat()
                     })
+                    
+                    # === A. 自动移交下一部门逻辑 ===
+                    if action == "✅ 完成并移交下一部门" and len(workflow) > 1:
+                        # 找到当前部门在 workflow 中的位置
+                        current_index = next((i for i, s in enumerate(workflow) if s['dept'] == current_dept), None)
+                        if current_index is not None and current_index + 1 < len(workflow):
+                            next_dept = workflow[current_index + 1]['dept']
+                            st.info(f"任务 {item_id} 已完成，已自动移交到下一部门: **{next_dept}**")
                 
-                new_df = pd.DataFrame(new_rows)
-                if not progress.empty:
-                    progress = pd.concat([progress, new_df], ignore_index=True)
-                else:
-                    progress = new_df
-                progress.to_csv(PROGRESS_CSV, index=False)
-                
-                st.success(f"✅ 已成功更新 {len(selected_items)} 个任务 为 {action}")
-                st.rerun()
+                if new_rows:
+                    new_df = pd.DataFrame(new_rows)
+                    if not progress.empty:
+                        progress = pd.concat([progress, new_df], ignore_index=True)
+                    else:
+                        progress = new_df
+                    progress.to_csv(PROGRESS_CSV, index=False)
+                    
+                    st.success(f"✅ 成功更新 {len(selected_items)} 个任务！")
+                    # 使用 experimental_rerun 提高稳定性
+                    st.experimental_rerun()
 else:
     st.info("没有找到匹配的任务。")
 
-st.caption("已支持 Nesting Num 批量完成 + 按钮反应优化")
+st.caption("已实现自动移交下一部门 + 批量操作优化")
