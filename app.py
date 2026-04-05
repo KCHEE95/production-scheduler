@@ -8,12 +8,12 @@ st.set_page_config(page_title="K.K. Metal AI排产系统", layout="wide", page_i
 
 # ====================== 初始化 ======================
 if 'items' not in st.session_state:
-    st.session_state.items = pd.DataFrame(columns=['item_id', 'main_part', 'subpart', 'customer_po', 
-                                                   'order_date', 'exwork_date', 'qty', 'workflow'])
+    st.session_state.items = pd.DataFrame(columns=['item_id','main_part','subpart','customer_po',
+                                                   'order_date','exwork_date','qty','workflow'])
 
 if 'progress' not in st.session_state:
-    st.session_state.progress = pd.DataFrame(columns=['item_id', 'dept', 'status', 'arrival_time', 
-                                                      'actual_completion', 'delay_days'])
+    st.session_state.progress = pd.DataFrame(columns=['item_id','dept','status','arrival_time',
+                                                      'actual_completion','delay_days'])
 
 def save_data():
     st.session_state.items.to_csv('items.csv', index=False)
@@ -34,7 +34,7 @@ st.title("🏭 K.K. Metal AI 自动排产系统 - 测试版")
 uploaded_file = st.file_uploader("📤 上传 Epicor BAQ Report 文件", type=["xlsx"])
 
 if uploaded_file:
-    with st.spinner("正在读取 Excel（header=5）..."):
+    with st.spinner("正在读取 Excel（header 从第6行开始）..."):
         try:
             df = pd.read_excel(uploaded_file, sheet_name="sAMPLE", header=5)
             df = df.dropna(how='all').reset_index(drop=True)
@@ -49,15 +49,19 @@ if uploaded_file:
                 
                 item_id = f"{main_part}_{subpart}"
                 
-                # 最保守的检查方式
-                if len(st.session_state.items) > 0 and 'item_id' in st.session_state.items.columns:
-                    if item_id in st.session_state.items['item_id'].values:
-                        continue
+                # 最保守的检查：避免任何 len() 和 .empty
+                already_exists = False
+                if 'item_id' in st.session_state.items.columns and len(st.session_state.items) > 0:
+                    already_exists = item_id in st.session_state.items['item_id'].values
+                
+                if already_exists:
+                    continue
                 
                 workflow = parse_workflow(row)
                 if not workflow:
                     continue
                 
+                # 添加新 item
                 new_row = pd.DataFrame([{
                     'item_id': item_id,
                     'main_part': main_part,
@@ -71,6 +75,7 @@ if uploaded_file:
                 
                 st.session_state.items = pd.concat([st.session_state.items, new_row], ignore_index=True)
                 
+                # 自动进入第一个部门
                 first_dept = workflow[0]['dept']
                 prog_row = pd.DataFrame([{
                     'item_id': item_id,
@@ -90,13 +95,16 @@ if uploaded_file:
             
         except Exception as e:
             st.error(f"导入失败: {str(e)}")
+            st.info("如果一直失败，请把完整错误信息发给我。")
 
 # ====================== 显示状态 ======================
 st.subheader("当前导入状态")
-if len(st.session_state.items) == 0:
-    st.info("尚未导入任何数据。请上传 Excel 文件测试。")
-else:
-    st.success(f"已成功导入 **{len(st.session_state.items)}** 个 Subpart")
-    st.dataframe(st.session_state.items[['main_part', 'subpart', 'customer_po']].head(10), use_container_width=True)
+item_count = len(st.session_state.items) if 'item_id' in st.session_state.items.columns else 0
+st.write(f"已导入 Subpart 数量：**{item_count}**")
 
-st.caption("测试版 | 只测试导入功能 | 如导入成功，我会马上帮您加上完整部门视图")
+if item_count > 0:
+    st.dataframe(st.session_state.items[['main_part', 'subpart', 'customer_po']].head(10), use_container_width=True)
+else:
+    st.info("请上传您的 Epicor Excel 文件进行测试。")
+
+st.caption("极简测试版 | 只测试导入功能 | 如导入成功，我会马上帮您加上完整功能")
